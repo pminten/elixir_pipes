@@ -202,6 +202,11 @@ defmodule Pipe do
   def bind(HaveOutput[value: v, next: n], f) do
     HaveOutput[value: v, next: bind(n, f)]
   end
+  def bind(p = Done[result: r], nil) do
+    # A nil step can easily result from an if without an else case. Gracefully
+    # handle it by considering it to mean return.
+    bind(p, &(return(&1)))
+  end
   def bind(Done[result: r], f) do
     x = f.(r)
     # It's quite possible, even normal, that we get not a step but a pipe which
