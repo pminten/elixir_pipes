@@ -3,6 +3,8 @@ defmodule Pipe do
   A [conduit](http://hackage.haskell.org/package/conduit) like pipe system for Elixir.
   """
 
+  require Macro.Monad
+
   @typedoc "A pipe which hasn't started running yet"
   @type t :: Source.t | Conduit.t | Sink.t
 
@@ -238,16 +240,25 @@ defmodule Pipe do
   If `source` is not `nil` the generated conduit is automatically connected to
   the source.
   """
-  defmacro conduit(source // nil, opts) do
-    if opts[:lazy] do
-      quote do
-        Pipe.connect(unquote(source),
-          Conduit[step: fn -> unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do])) end])
+  defmacro conduit(opts), do: do_conduit(opts)
+  
+  @doc """
+  Like conduit/1 but connects the source to the generated conduit.
+  
+  Useful in pipelines.
+  """
+  defmacro conduit_c(source, opts) do
+    quote do Pipe.connect(unquote(source), unquote(do_conduit(opts))) end
+  end
+
+  defp do_conduit(opts) do
+    if opts[:strict] do
+      quote do 
+        Conduit[step: unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do]))]
       end
     else
       quote do 
-        Pipe.connect(unquote(source),
-          Conduit[step: unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do]))])
+        Conduit[step: fn -> unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do])) end]
       end
     end
   end
@@ -260,16 +271,25 @@ defmodule Pipe do
   If `source` is not `nil` the generated sink is automatically connected to
   the source.
   """
-  defmacro sink(source // nil, opts) do
-    if opts[:lazy] do
-      quote do
-        Pipe.connect(unquote(source),
-          Sink[step: fn -> unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do])) end])
+  defmacro sink(opts), do: do_sink(opts)
+  
+  @doc """
+  Like sink/1 but connects the source to the generated conduit.
+  
+  Useful in pipelines.
+  """
+  defmacro sink_c(source, opts) do
+    quote do Pipe.connect(unquote(source), unquote(do_sink(opts))) end
+  end
+
+  defp do_sink(opts) do
+    if opts[:strict] do
+      quote do 
+        Sink[step: unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do]))]
       end
     else
       quote do 
-        Pipe.connect(unquote(source),
-          Sink[step: unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do]))])
+        Sink[step: fn -> unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do])) end]
       end
     end
   end
