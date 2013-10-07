@@ -6,6 +6,5 @@ Elixir.
 ## TODO
 
 * Better documentation
-* Leftovers
 * Some way to clean up resources opened from an upstream pipe when a downstream
   pipe terminates

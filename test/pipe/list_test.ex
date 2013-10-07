@@ -18,4 +18,20 @@ defmodule Pipe.ListTest do
     
     assert (P.source_list([1,2,3,4]) |> PL.filter(&(rem(&1, 2) == 0)) |> P.skip_all()) == nil
   end
+
+  # take_while is a typical leftover generating function.
+  test "take_while" do
+    assert (P.source_list([1,2,3]) |>
+            P.sink do
+              a <- PL.take_while(&(&1 < 3))
+              b <- PL.consume()
+              return {a, b}
+            end) == { [1,2], [3] }
+    assert (P.source_list([3,4]) |>
+            P.sink do
+              a <- PL.take_while(&(&1 < 3))
+              b <- PL.consume()
+              return {a, b}
+            end) == { [], [3,4] }
+  end
 end

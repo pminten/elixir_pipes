@@ -106,5 +106,28 @@ defmodule Pipe.List do
           skip_all()
       end
     end
-  end 
+  end
+
+  @doc """
+  Consume input values while the predicate function returns a true value and
+  return those input values as a list.
+  """
+  def take_while(source // nil, f) do
+    P.connect(source, do_take_while([], f))
+  end
+
+  defp do_take_while(acc, f) do
+    P.sink do
+      t <- P.await()
+      case t do
+        []  -> return :lists.reverse(acc)
+        [x] -> 
+          if f.(x) do
+            do_take_while([x|acc], f)
+          else
+            P.return_leftovers(:lists.reverse(acc), [x])
+          end
+      end
+    end
+  end
 end

@@ -76,13 +76,14 @@ defmodule Pipe do
     record_type value: any, next: (() -> Pipe.t)
   end
 
-  defrecord Done, result: nil do
+  defrecord Done, result: nil, leftovers: [] do
     @moduledoc """
     A pipe that is done.
 
     The `result` field should contain the result of the pipe.
+    The `leftovers` field should contain any unused input items.
     """
-    record_type result: any
+    record_type result: any, leftovers: [any]
   end
 
   defexception Invalid, message: nil do
@@ -180,11 +181,25 @@ defmodule Pipe do
   Return a value inside a pipe.
 
   Note that you can't do `connect(return(1), await())` because return/1 doesn't
-  return a source, conduit or sink but a pipe step.
+  return a source, conduit or sink but a pipe step. If you run into this problem
+  use `done/1` instead.
   """
   @spec return(any()) :: Done.t
   def return(x) do
     Done[result: x]
+  end
+ 
+  # Not really a monadic interface part but it fits best here.
+  @doc """
+  Return a result and some leftovers.
+  
+  Note that you can't do `connect(return_leftovers(1, []), await())` because
+  return_leftovers/2 doesn't return a source, conduit or sink but a pipe step.
+  If you run into this problem use `done/2` instead.
+  """
+  @spec return_leftovers(any, [any]) :: Done.t
+  def return_leftovers(x, l) do
+    Done[result: x, leftovers: l]
   end
 
   @doc """
@@ -207,17 +222,35 @@ defmodule Pipe do
     # handle it by considering it to mean return.
     bind(p, &(return(&1)))
   end
-  def bind(Done[result: r], f) do
+  def bind(Done[result: r, leftovers: l], f) do
     x = f.(r)
     # It's quite possible, even normal, that we get not a step but a pipe which
     # hasn't started running, which basically means a lazily evaluated pipe
     # step. Force the step, otherwise the whole system won't work.
-    case x do
+    s = case x do
       Source[step: s]   -> force(s)
       Conduit[step: s]  -> force(s)
       Sink[step: s]     -> force(s)
-      _                  -> x
+      _                 -> x
     end
+    if l == [], do: s, else: with_leftovers(s, l)
+  end
+
+  @doc """
+  Run the step with some leftovers present.
+  """
+  @spec with_leftovers(step, [any]) :: step
+  def with_leftovers(s, []) do
+    s
+  end
+  def with_leftovers(NeedInput[on_value: ov], [h|t]) do
+    with_leftovers(ov.(h), t)
+  end
+  def with_leftovers(HaveOutput[value: v, next: n], l) do
+    HaveOutput[value: v, next: fn -> with_leftovers(n, l) end]
+  end
+  def with_leftovers(Done[result: r, leftovers: l1], l2) do
+    Done[result: r, leftovers: l1 ++ l2]
   end
 
   @doc """
@@ -340,13 +373,17 @@ defmodule Pipe do
   end
 
   @doc """
-  Return a value as a valid pipe.
+  Return a value as a valid pipe and optionally pass along some leftover input
+  values.
 
   Use this instead of `return/1` if you're going to immediately use the pipe in
   horizontal composition.
+  
+  Only return input values as leftovers, otherwise weird things might happen.
   """
   @spec done(any) :: Source.t
-  def done(v) do
-    Source[step: return(v)]
+  @spec done(any, [any]) :: Source.t
+  def done(v, l // []) do
+    Source[step: return_leftovers(v, l)]
   end
 end
