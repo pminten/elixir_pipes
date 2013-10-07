@@ -302,15 +302,32 @@ defmodule Pipe do
   ## Primitive pipes
   
   @doc """
-  Wait for a value to be provided by upstream. If a value is provided return it
-  wrapped in a single element list, otherwise return an empty list.
+  Wait for a value to be provided by upstream.
+  
+  If a value is provided return it wrapped in a single element list, otherwise
+  return an empty list.
   """
   @spec await() :: Sink.t
   @spec await(sourceish) :: Sink.t
   def await(source // nil) do
     connect(source,
       Sink[step: NeedInput[on_value: &Done[result: [&1]],
-                              on_done: fn _ -> Done[result: []] end]]
+                           on_done: fn _ -> Done[result: []] end]]
+    )
+  end
+
+  @doc """
+  Wait for a value or result to be provided by upstream.
+
+  Returns either `{ :value, value }` (if a value is provided) or `{ :result,
+  result }` (if the upstream is done).
+  """
+  @spec await_result() :: Sink.t
+  @spec await_result(sourceish) :: Sink.t
+  def await_result(source // nil) do
+    connect(source,
+      Sink[step: NeedInput[on_value: &Done[result: { :value, &1 }],
+                           on_done:  &Done[result: { :result, &1 }]]]
     )
   end
 

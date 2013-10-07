@@ -24,6 +24,8 @@ defmodule Pipe.List do
 
   @doc """
   Only pass those values for which the filter returns a non-nil non-false value.
+  
+  The result is the upstream result.
   """
   def filter(source // nil, f) do
     P.connect(source, do_filter(f))
@@ -31,11 +33,11 @@ defmodule Pipe.List do
 
   defp do_filter(f) do
     P.conduit do
-      r <- P.await()
-      case r do
-        []  ->
-          return nil
-        [x] ->
+      t <- P.await_result()
+      case t do
+        { :result, r }  ->
+          return r
+        { :value, x } ->
           if (f.(x)) do
             P.yield(f.(x))
           end
@@ -46,6 +48,8 @@ defmodule Pipe.List do
 
   @doc """
   Map a function over the input values.
+
+  The result is the upstream result.
   """
   def map(source // nil, f) do
     P.connect(source, do_map(f))
@@ -53,11 +57,11 @@ defmodule Pipe.List do
 
   def do_map(f) do
     P.conduit do
-      r <- P.await()
-      case r do
-        []  ->
-          return nil
-        [x] ->
+      t <- P.await_result()
+      case t do
+        { :result, r }  ->
+          return r
+        { :value, x } ->
           P.yield(f.(x))
           do_map(f)
       end
@@ -81,6 +85,25 @@ defmodule Pipe.List do
           return(:lists.reverse(acc)) 
         [x] ->
           do_consume([x|acc])
+      end
+    end
+  end 
+
+  @doc """
+  Ignore all the input and return the upstream result.
+  """
+  def skip_all(source // nil) do
+    P.connect(source, do_skip_all())
+  end
+
+  defp do_skip_all() do
+    P.sink do
+      t <- P.await_result()
+      case t do
+        { :result, r }  ->
+          return r
+        { :value, _ } ->
+          skip_all()
       end
     end
   end 

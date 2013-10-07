@@ -51,4 +51,9 @@ defmodule PipeTest do
     assert (P.done(1) |> P.connect(P.await())) == []
     assert (P.yield(1) |> P.await()) == [1]
   end
+  
+  test "await_result" do
+    assert (P.done(1) |> P.connect(P.await_result())) == { :result, 1 }
+    assert (P.yield(1) |> P.await_result()) == { :value, 1 }
+  end
 end
