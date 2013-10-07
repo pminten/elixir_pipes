@@ -5,7 +5,7 @@ defmodule MonadTest do
     @behaviour Macro.Monad
 
     def return(x), do: x
-    def bind(x, f), do: f.(x)
+    def bind(m, f), do: f.(m)
   end
 
   defmacro identity(opts) do
@@ -40,4 +40,29 @@ defmodule MonadTest do
     assert ten == 10
   end
 
+  defmodule ListM do
+    @behaviour Macro.Monad
+    def return(x), do: [x]
+    def bind(m, f), do: Enum.flat_map(m, f)
+
+    defmacro monad(opts) do
+      Macro.Monad.monad_do_notation(MonadTest.ListM, opts[:do])
+    end
+  end
+
+  test "list monad" do
+    require ListM
+    prods = ListM.monad do
+      x <- Enum.to_list(2..3)
+      y <- Enum.to_list(2..3)
+      let f = &(&1 * &2)
+      return { x, y, f.(x, y) }
+    end
+    assert prods == [
+      { 2, 2, 4 },
+      { 2, 3, 6 },
+      { 3, 2, 6 },
+      { 3, 3, 9 }
+    ]
+  end
 end
