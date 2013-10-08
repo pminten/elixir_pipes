@@ -1,5 +1,6 @@
 defmodule PipeTest do
   use ExUnit.Case
+  doctest Pipe
 
   require Pipe
   alias Pipe, as: P

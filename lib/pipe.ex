@@ -217,7 +217,7 @@ defmodule Pipe do
   def bind(HaveOutput[value: v, next: n], f) do
     HaveOutput[value: v, next: bind(n, f)]
   end
-  def bind(p = Done[result: r], nil) do
+  def bind(p = Done[], nil) do
     # A nil step can easily result from an if without an else case. Gracefully
     # handle it by considering it to mean return.
     bind(p, &(return(&1)))
@@ -385,5 +385,48 @@ defmodule Pipe do
   @spec done(any, [any]) :: Source.t
   def done(v, l // []) do
     Source[step: return_leftovers(v, l)]
+  end
+
+  ## Misc
+  @doc """
+  Zip two sources.
+  
+  Yields `{a, b}` where `a` is a value from the first source and `b` is a value
+  from the second source.
+
+  If both of the sources are done the result value will be `{ result_of_a,
+  result_of_b }`. If only one of the sources is done a similar tuple will be
+  returned but with :not_done instead of the result value of the other source.
+
+  ## Examples
+
+    iex> Pipe.zip_sources(Pipe.yield(1), Pipe.yield(2)) |> Pipe.List.consume
+    [{1, 2}]
+
+    iex> Pipe.zip_sources(Pipe.done(:a), Pipe.done(:b)) |> Pipe.List.skip_all
+    { :a, :b }
+    
+    iex> Pipe.zip_sources(Pipe.done(:a), Pipe.yield(2)) |> Pipe.List.skip_all
+    { :a, :not_done }
+  """
+  @spec zip_sources(Source.t, Source.t) :: Source.t
+  def zip_sources(Source[step: a], Source[step: b]),
+    do: Source[step: do_zip_sources(force(a), force(b))]
+
+  defp do_zip_sources(Source[step: a], b), do: do_zip_sources(force(a), b)
+  defp do_zip_sources(a, Source[step: b]), do: do_zip_sources(a, force(b))
+  defp do_zip_sources(NeedInput[on_done: od], b), do: do_zip_sources(od.(nil), b)
+  defp do_zip_sources(a, NeedInput[on_done: od]), do: do_zip_sources(a, od.(nil))
+  defp do_zip_sources(HaveOutput[value: va, next: na], HaveOutput[value: vb, next: nb]) do
+    HaveOutput[value: { va, vb }, next: fn -> do_zip_sources(na.(), nb.()) end]
+  end
+  defp do_zip_sources(Done[result: ra], Done[result: rb]) do
+    Done[result: { ra, rb }]
+  end
+  defp do_zip_sources(Done[result: r], HaveOutput[]) do
+    Done[result: { r, :not_done }]
+  end
+  defp do_zip_sources(HaveOutput[], Done[result: r]) do
+    Done[result: { :not_done, r }]
   end
 end
