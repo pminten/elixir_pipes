@@ -81,9 +81,25 @@ defmodule Pipe do
     A pipe that is done.
 
     The `result` field should contain the result of the pipe.
+  
     The `leftovers` field should contain any unused input items.
     """
     record_type result: any, leftovers: [any]
+  end
+
+  defrecord RegisterCleanup, func: nil, next: nil do
+    @moduledoc """
+    A pipe that wants to register a cleanup function.
+
+    Cleanup functions get run when the complete pipe has finished running.
+
+    The `func` field should contain a nullary function which should be safe
+    to call multiple times.
+
+    The `next` field should contain a nullary function which when evaluated
+    returns a new pipe.
+    """
+    record_type func: (() -> none), next: (() -> Pipe.t)
   end
 
   defexception Invalid, message: nil do
@@ -153,6 +169,16 @@ defmodule Pipe do
   defp run(Done[result: r]) do
     r
   end
+  defp run(RegisterCleanup[func: f, next: n]) do
+    # If 3 resources are registered the run function will be on the stack 3
+    # times, registering too many resources would therefore not be a too
+    # brilliant idea. However I doubt this will be a problem in practice.
+    try do
+      run(n.())
+    after
+      f.()
+    end
+  end
 
   # Perform a step or as much steps as possible.
   @spec step(step, step) :: step | Done.t
@@ -173,6 +199,12 @@ defmodule Pipe do
   end
   defp step(_, Done[result: r]) do
     Done[result: r]
+  end
+  defp step(RegisterCleanup[func: f, next: n], b) do
+    RegisterCleanup[func: f, next: fn -> step(n.(), b) end]
+  end
+  defp step(a, RegisterCleanup[func: f, next: n]) do
+    RegisterCleanup[func: f, next: fn -> step(a, n.()) end]
   end
 
   ## The monadic interface (vertical composition)
@@ -215,7 +247,7 @@ defmodule Pipe do
     NeedInput[on_value: &(ov.(&1) |> bind(f)), on_done: &(od.(&1) |> bind(f))]
   end
   def bind(HaveOutput[value: v, next: n], f) do
-    HaveOutput[value: v, next: bind(n, f)]
+    HaveOutput[value: v, next: fn -> bind(n.(), f) end]
   end
   def bind(p = Done[], nil) do
     # A nil step can easily result from an if without an else case. Gracefully
@@ -235,6 +267,9 @@ defmodule Pipe do
     end
     if l == [], do: s, else: with_leftovers(s, l)
   end
+  def bind(RegisterCleanup[func: cf, next: n], f) do
+    RegisterCleanup[func: cf, next: fn -> bind(n.(), f) end]
+  end
 
   @doc """
   Run the step with some leftovers present.
@@ -251,6 +286,9 @@ defmodule Pipe do
   end
   def with_leftovers(Done[result: r, leftovers: l1], l2) do
     Done[result: r, leftovers: l1 ++ l2]
+  end
+  def with_leftovers(RegisterCleanup[func: f, next: n], l) do
+    RegisterCleanup[func: f, next: fn -> with_leftovers(n.(), l) end]
   end
 
   @doc """
@@ -387,6 +425,22 @@ defmodule Pipe do
     Source[step: return_leftovers(v, l)]
   end
 
+  @doc """
+  Register a cleanup function to be called when the complete pipe has finished
+  running.
+
+  The cleanup function should be safe to call multiple times.
+
+  This is a good way to prevent resource leaks.
+
+  Note that `register_cleanup/1` returns a step and thus can't be used directly
+  in `connect/2` (not that you'd ever want to).
+  """
+  @spec register_cleanup((() -> none)) :: step 
+  def register_cleanup(f) do
+    RegisterCleanup[func: f, next: fn -> Done[result: nil] end]
+  end
+
   ## Misc
   @doc """
   Zip two sources.
@@ -417,6 +471,12 @@ defmodule Pipe do
   defp do_zip_sources(a, Source[step: b]), do: do_zip_sources(a, force(b))
   defp do_zip_sources(NeedInput[on_done: od], b), do: do_zip_sources(od.(nil), b)
   defp do_zip_sources(a, NeedInput[on_done: od]), do: do_zip_sources(a, od.(nil))
+  defp do_zip_sources(RegisterCleanup[func: f, next: n], b) do
+    RegisterCleanup[func: f, next: fn -> do_zip_sources(n.(), b) end]
+  end
+  defp do_zip_sources(a, RegisterCleanup[func: f, next: n]) do
+    RegisterCleanup[func: f, next: fn -> do_zip_sources(a, n.()) end]
+  end
   defp do_zip_sources(HaveOutput[value: va, next: na], HaveOutput[value: vb, next: nb]) do
     HaveOutput[value: { va, vb }, next: fn -> do_zip_sources(na.(), nb.()) end]
   end
