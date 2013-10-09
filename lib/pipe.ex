@@ -454,14 +454,14 @@ defmodule Pipe do
 
   ## Examples
 
-    iex> Pipe.zip_sources(Pipe.yield(1), Pipe.yield(2)) |> Pipe.List.consume
-    [{1, 2}]
-
-    iex> Pipe.zip_sources(Pipe.done(:a), Pipe.done(:b)) |> Pipe.List.skip_all
-    { :a, :b }
-    
-    iex> Pipe.zip_sources(Pipe.done(:a), Pipe.yield(2)) |> Pipe.List.skip_all
-    { :a, :not_done }
+      iex> Pipe.zip_sources(Pipe.yield(1), Pipe.yield(2)) |> Pipe.List.consume
+      [{1, 2}]
+  
+      iex> Pipe.zip_sources(Pipe.done(:a), Pipe.done(:b)) |> Pipe.List.skip_all
+      { :a, :b }
+      
+      iex> Pipe.zip_sources(Pipe.done(:a), Pipe.yield(2)) |> Pipe.List.skip_all
+      { :a, :not_done }
   """
   @spec zip_sources(Source.t, Source.t) :: Source.t
   def zip_sources(Source[step: a], Source[step: b]),
