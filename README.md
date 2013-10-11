@@ -18,9 +18,11 @@ Pipes come in three basic forms: sources, conduits and sinks. Sources produce
 values, sinks consume them and conduits to both. Take for example the following
 pipeline:
 
-    alias Pipe.List, as: PL
-    PL.source_list([1,2,3]) |> PL.map(&(&1+1)) |> PL.take_while(&(&1<=2))
-    # Result: [1, 2]
+```elixir
+alias Pipe.List, as: PL
+PL.source_list([1,2,3]) |> PL.map(&(&1+1)) |> PL.take_while(&(&1<=2))
+# Result: [1, 2]
+```
 
 `PL.source_list` is a source, `PL.map` is a conduit and `PL.take_while` is a
 sink.
@@ -39,29 +41,35 @@ runs the pipe.
 
 The above example could have been written as:
     
-    alias Pipe, as: P
-    alias Pipe.List, as: PL
-    source = PL.source_list([1,2,3])
-    conduit = PL.map(&(&1+1))
-    sink = PL.take_while(&(&1<=2))
-    new_source = P.connect(source, conduit)
-    result = P.connect(new_source, sink)
+```elixir
+alias Pipe, as: P
+alias Pipe.List, as: PL
+source = PL.source_list([1,2,3])
+conduit = PL.map(&(&1+1))
+sink = PL.take_while(&(&1<=2))
+new_source = P.connect(source, conduit)
+result = P.connect(new_source, sink)
+```
 
 It could also have been written as:
     
-    source = PL.source_list([1,2,3])
-    conduit = PL.map(&(&1+1))
-    sink = PL.take_while(&(&1<=2))
-    new_sink = P.connect(conduit, sink)
-    result = P.connect(source, new_sink)
+```elixir
+source = PL.source_list([1,2,3])
+conduit = PL.map(&(&1+1))
+sink = PL.take_while(&(&1<=2))
+new_sink = P.connect(conduit, sink)
+result = P.connect(source, new_sink)
+```
 
 The reason the `PL.source_list([1,2,3]) |> PL.map(&(&1+1)) |>
 PL.take_while(&(&1<=2))` pipeline works is that the `PL.map` function is defined
 like this:
 
-    def map(source // nil, f) do
-      P.connect(source, do_map(f))
-    end
+```elixir
+def map(source // nil, f) do
+  P.connect(source, do_map(f))
+end
+```
 
 It simply does the connect for you already. If you don't pass a source (or a
 conduit) nothing happens because `Pipe.connect/2` returns the second argument if
@@ -80,32 +88,37 @@ pipes to pipes that do complicated stuff. For example say you want to cut up
 input text to pass strings terminated by a semicolon. But the input text may
 arrive in long or short pieces. Here's one way to do this:
 
-    require Pipe, as: P # Uses macro's from Pipe
-    alias Pipe.List, as: PL
-    def terminated_by_semicolon(source // nil) do
-      P.connect(source, do_term_by_semi(<<>>))
-    end
+```elixir
+require Pipe, as: P # Uses macro's from Pipe
+alias Pipe.List, as: PL
 
-    defp do_term_by_semi(buffer) do
-      P.conduit do
-        r <- P.await()
-        case r do
-          []    -> return nil # end of input
-          [str] -> P.conduit do
-            let parts = String.split(buffer <> str, ";")
-            PL.source_list(Enum.take(parts, -1))
-            do_term_by_semi(Enum.at(parts, -1))
-          end
-        end
+def terminated_by_semicolon(source // nil) do
+  P.connect(source, do_term_by_semi(<<>>))
+end
+
+defp do_term_by_semi(buffer) do
+  P.conduit do
+    r <- P.await()
+    case r do
+      []    -> return nil # end of input
+      [str] -> P.conduit do
+        let parts = String.split(buffer <> str, ";")
+        PL.source_list(Enum.take(parts, -1))
+        do_term_by_semi(Enum.at(parts, -1))
       end
     end
- 
+  end
+end
+```
+
 Here's how it works:
 
-    PL.source_list(["AB;C", "D;E", ";", "F"]),
-    |> do_term_by_semi()
-    |> PL.consume())
-    # Result: ["AB", "CD", "E"]
+```elixir
+PL.source_list(["AB;C", "D;E", ";", "F"]),
+|> do_term_by_semi()
+|> PL.consume())
+=# Result: ["AB", "CD", "E"]
+```
 
 Let's go over this piece by piece. The main `terminated_by_semicolon` function
 uses the `connect` hack to allow it to be used in a pipeline. The
@@ -128,14 +141,16 @@ it doesn't have anything to do with pipes.
 
 The used approach is slightly inefficient, I could also have written
 
-    [str] -> P.conduit do
-      let do
-        splitted = String.split(str, ";")
-        parts = [buffer <> hd(splitted) | tl(splitted)]
-      end
-      PL.source_list(Enum.take(parts, -1))
-      do_term_by_semi(Enum.at(parts, -1))
-    end
+```elixir
+[str] -> P.conduit do
+  let do
+    splitted = String.split(str, ";")
+    parts = [buffer <> hd(splitted) | tl(splitted)]
+  end
+  PL.source_list(Enum.take(parts, -1))
+  do_term_by_semi(Enum.at(parts, -1))
+end
+```
 
 The do-block with `let` is a way of telling the machinery that everything in
 the do-block is unrelated to conduits. It's also a bit more sturdy than
@@ -201,21 +216,22 @@ In general when you write a conduit that doesn't have a return value (when you'd
 just always return nil) it's a good idea to return the upstream return value,
 maybe some pipe downstream has use for it. For example here's how
 `do_term_by_semi` would look when returning the upstream return value.
-    
-    defp do_term_by_semi(buffer) do
-      P.conduit do
-        r <- P.await_result()
-        case r do
-          { :result, res } -> return res # end of input
-          { :value, str } -> P.conduit do
-            let parts = String.split(buffer <> str, ";")
-            PL.source_list(Enum.take(parts, -1))
-            do_term_by_semi(Enum.at(parts, -1))
-          end
-        end
+
+```elixir
+defp do_term_by_semi(buffer) do
+  P.conduit do
+    r <- P.await_result()
+    case r do
+      { :result, res } -> return res # end of input
+      { :value, str } -> P.conduit do
+        let parts = String.split(buffer <> str, ";")
+        PL.source_list(Enum.take(parts, -1))
+        do_term_by_semi(Enum.at(parts, -1))
       end
     end
-
+  end
+end
+```
 
 ### Leftovers
 
@@ -225,40 +241,44 @@ a particular function returns true and returns the gathered values once the
 function returns false or there is no more input. Here's one, wrong, way to
 write it:
 
-    def take_while(source // nil, f) do
-      P.connect(source, do_take_while([], f))
-    end
+```elixir
+def take_while(source // nil, f) do
+  P.connect(source, do_take_while([], f))
+end
 
-    defp do_take_while(acc, f) do
-      P.sink do
-        t <- P.await()
-        case t do
-          []  -> return :lists.reverse(acc)
-          [x] -> 
-            if f.(x) do
-              do_take_while([x|acc], f)
-            else
-              P.return(:lists.reverse(acc))
-            end
+defp do_take_while(acc, f) do
+  P.sink do
+    t <- P.await()
+    case t do
+      []  -> return :lists.reverse(acc)
+      [x] -> 
+        if f.(x) do
+          do_take_while([x|acc], f)
+        else
+          P.return(:lists.reverse(acc))
         end
-      end
     end
+  end
+end
+```
 
 So what's the problem here? Well let's say you want to create a sink that
 returns a tuple where the first element is all values that contiguously match
 the function and the second element is all remaining values.
 
-    def cont_consume(source // nil, f) do
-      P.connect(source, do_cont_consume(f))
-    end
+```elixir
+def cont_consume(source // nil, f) do
+  P.connect(source, do_cont_consume(f))
+end
 
-    defp do_cont_consume(f) do
-      P.sink do
-        a <- take_while(f)
-        b <- consume
-        return { a, b }
-      end
-    end
+defp do_cont_consume(f) do
+  P.sink do
+    a <- take_while(f)
+    b <- consume
+    return { a, b }
+  end
+end
+```
 
 When you call it like this: `PL.source_list([1, 2, :a, 3, :b] |>
 cont_consume(&is_integer/1)` the result isn't `{ [1, 2], [:a, 3, :b] }` but `{
@@ -267,20 +287,22 @@ cont_consume(&is_integer/1)` the result isn't `{ [1, 2], [:a, 3, :b] }` but `{
 To avoid this problem you can use `return_leftovers` to give back unused input
 values. Here's how the real `do_take_while` looks:
   
-    defp do_take_while(acc, f) do
-      P.sink do
-        t <- P.await()
-        case t do
-          []  -> return :lists.reverse(acc)
-          [x] -> 
-            if f.(x) do
-              do_take_while([x|acc], f)
-            else
-              P.return_leftovers(:lists.reverse(acc), [x])
-            end
+```elixir
+defp do_take_while(acc, f) do
+  P.sink do
+    t <- P.await()
+    case t do
+      []  -> return :lists.reverse(acc)
+      [x] -> 
+        if f.(x) do
+          do_take_while([x|acc], f)
+        else
+          P.return_leftovers(:lists.reverse(acc), [x])
         end
-      end
     end
+  end
+end
+```
 
 When using `return_leftovers` be sure to only pass actually received input
 values and in the correct order. Otherwise you might end up with weird results.
@@ -291,36 +313,40 @@ values and in the correct order. Otherwise you might end up with weird results.
 Some pipes deal with resources that should be closed when the pipe is done. For
 example say you have a source that reads blocks of at most 64 bytes from a file.
 
-    def read64(filename) do
-      P.lazy_source do
-        f <- File.open!(filename, [:read])
-        do_read64(f)
-      end
-    end
+```elixir
+def read64(filename) do
+  P.lazy_source do
+    f <- File.open!(filename, [:read])
+    do_read64(f)
+  end
+end
 
-    defp do_read64(f) do
-      P.lazy_source do
-        case IO.binread(f, 64) do
-          :eof               -> return nil
-          # Slightly abusing StreamError, though this is similar to a stream 
-          { :error, reason } -> raise IO.StreamError, reason: reason,
-                                                      message: "binread failed"
-          data               -> P.source do P.yield(data); do_read64(f) end
-        end
-      end
+defp do_read64(f) do
+  P.lazy_source do
+    case IO.binread(f, 64) do
+      :eof               -> return nil
+      # Slightly abusing StreamError, though this is similar to a stream 
+      { :error, reason } -> raise IO.StreamError, reason: reason,
+                                                  message: "binread failed"
+      data               -> P.source do P.yield(data); do_read64(f) end
     end
+  end
+end
+```
 
 The problem with this is that if you run `read64("/tmp/foo") |>
 Pipe.List.consume()` it opens a file but doesn't close it. Sure, you could
 rewrite `read64` to:
     
-    def read64(filename) do
-      P.lazy_source do
-        f <- File.open!(filename, [:read])
-        do_read64(f)
-        File.close(f)
-      end
-    end
+```elixir
+def read64(filename) do
+  P.lazy_source do
+    f <- File.open!(filename, [:read])
+    do_read64(f)
+    File.close(f)
+  end
+end
+```
 
 And that would work for `consume` but it wouldn't work for `read64("/tmp/foo") |>
 Pipe.List.take(0)` because the sink says "I'm done" before the source is done.
@@ -330,14 +356,16 @@ of an exception somewhere in a sink.
 There is a better with. Using `Pipe.register_cleanup/1` you can register a
 function that gets called when the pipe has finished running even if there is an
 exception. This doesn't leave the file open:
-    
-    def read64(filename) do
-      P.lazy_source do
-        f <- File.open!(filename, [:read])
-        P.register_cleanup(fn -> File.close(f) end)
-        do_read64(f)
-      end
-    end
+   
+```elixir
+def read64(filename) do
+  P.lazy_source do
+    f <- File.open!(filename, [:read])
+    P.register_cleanup(fn -> File.close(f) end)
+    do_read64(f)
+  end
+end
+```
 
 It's not recommended btw to register too many (think thousands) of cleanup
 handlers because each one causes a new entry on the stack to be created.
