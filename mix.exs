@@ -6,7 +6,7 @@ defmodule ElixirPipes.Mixfile do
       version: "0.0.1",
       elixir: "~> 0.10.3-dev",
       deps: deps,
-      docs: [ main: Pipe, source_url: "https://github.com/pminten/elixir_pipes/" ] ]
+      docs: [ main: Pipe, source_url: "https://github.com/pminten/elixir_pipes/", readme: true ] ]
   end
 
   # Configuration for the OTP application

@@ -23,7 +23,7 @@ defmodule PipeTest do
   
   test "yield to conduit to await with explicit connect and do-notation" do
     f = fn source ->
-          P.connect(source, P.conduit do
+          P.connect(source, P.lazy_conduit do
             r <- P.await()
             case r do
               [x] -> P.yield(x + 1)
@@ -34,7 +34,7 @@ defmodule PipeTest do
     assert (P.yield(4) |> f.() |> P.await()) == [5]
     # Again, in a shorter way.
     assert (P.yield(4) |>
-            P.conduit_c do
+            P.lazy_conduit_c do
               r <- P.await()
               case r do
                 [x] -> P.yield(x + 1)

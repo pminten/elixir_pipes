@@ -34,4 +34,36 @@ defmodule Pipe.ListTest do
               return {a, b}
             end) == { [], [3,4] }
   end
+
+  defmodule ReadmeExamples do
+    require Pipe, as: P # Uses macro's from Pipe
+    alias Pipe.List, as: PL
+    
+    def terminated_by_semicolon(source // nil) do
+      P.connect(source, do_term_by_semi(<<>>))
+    end
+
+    defp do_term_by_semi(buffer) do
+      P.conduit do
+        r <- P.await()
+        case r do
+          []    -> return nil # end of input
+          [str] -> P.conduit do
+            let parts = String.split(buffer <> str, ";")
+            PL.source_list(Enum.take(parts, -1))
+            do_term_by_semi(Enum.at(parts, -1))
+          end
+        end
+      end
+    end
+  end
+
+  test "terminated_by_semicolon example from README" do
+    assert (PL.source_list(["AB;C", "D;E", ";", "F"]),
+            |> ReadmeExamples.do_term_by_semi()
+            |> PL.consume()) == ["AB", "CD", "E"]
+    assert (PL.source_list(["AB;C", "D;E", ";"]),
+            |> ReadmeExamples.do_term_by_semi()
+            |> PL.consume()) == ["AB", "CD", "E"]
+  end
 end

@@ -37,11 +37,12 @@ defmodule Pipe.List do
       case t do
         { :result, r }  ->
           return r
-        { :value, x } ->
+        { :value, x } -> P.conduit do
           if (f.(x)) do
             P.yield(f.(x))
           end
           do_filter(f)
+        end
       end
     end
   end
@@ -61,9 +62,10 @@ defmodule Pipe.List do
       case t do
         { :result, r }  ->
           return r
-        { :value, x } ->
+        { :value, x } -> P.conduit do
           P.yield(f.(x))
           do_map(f)
+        end
       end
     end
   end
