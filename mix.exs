@@ -17,6 +17,7 @@ defmodule ElixirPipes.Mixfile do
   # Returns the list of dependencies in the format:
   # { :foobar, "~> 0.1", git: "https://github.com/elixir-lang/foobar.git" }
   defp deps do
-    []
+    # TODO: Switch to master branch of monad after monad-1.0
+    [ { :monad, "~> 0.4", git: "https://github.com/rmies/monad.git", branch: "develop" } ]
   end
 end

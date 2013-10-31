@@ -11,7 +11,9 @@ defmodule Pipe.List do
   """
   def source_list(list)
   def source_list([]) do
-    P.return nil
+    P.source do
+      P.return nil
+    end
   end
   def source_list([h|t]) do
     P.source do
@@ -27,11 +29,7 @@ defmodule Pipe.List do
   
   The result is the upstream result.
   """
-  def filter(source // nil, f) do
-    P.connect(source, do_filter(f))
-  end
-
-  defp do_filter(f) do
+  def filter(f) do
     P.conduit do
       t <- P.await_result()
       case t do
@@ -39,9 +37,9 @@ defmodule Pipe.List do
           return r
         { :value, x } -> P.conduit do
           if (f.(x)) do
-            P.yield(f.(x))
+            P.yield(x)
           end
-          do_filter(f)
+          filter(f)
         end
       end
     end
@@ -52,11 +50,7 @@ defmodule Pipe.List do
 
   The result is the upstream result.
   """
-  def map(source // nil, f) do
-    P.connect(source, do_map(f))
-  end
-
-  def do_map(f) do
+  def map(f) do
     P.conduit do
       t <- P.await_result()
       case t do
@@ -64,7 +58,7 @@ defmodule Pipe.List do
           return r
         { :value, x } -> P.conduit do
           P.yield(f.(x))
-          do_map(f)
+          map(f)
         end
       end
     end
@@ -75,9 +69,7 @@ defmodule Pipe.List do
   @doc """
   Return all remaining elements as a list.
   """
-  def consume(source // nil) do
-    P.connect(source, do_consume([]))
-  end
+  def consume(), do: do_consume([])
 
   defp do_consume(acc) do
     P.sink do
@@ -94,11 +86,7 @@ defmodule Pipe.List do
   @doc """
   Ignore all the input and return the upstream result.
   """
-  def skip_all(source // nil) do
-    P.connect(source, do_skip_all())
-  end
-
-  defp do_skip_all() do
+  def skip_all() do
     P.sink do
       t <- P.await_result()
       case t do
@@ -114,9 +102,7 @@ defmodule Pipe.List do
   Consume input values while the predicate function returns a true value and
   return those input values as a list.
   """
-  def take_while(source // nil, f) do
-    P.connect(source, do_take_while([], f))
-  end
+  def take_while(f), do: do_take_while([], f)
 
   defp do_take_while(acc, f) do
     P.sink do
