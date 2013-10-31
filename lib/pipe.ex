@@ -6,7 +6,6 @@ defmodule Pipe do
   """
 
   use Monad
-  use Monad.Pipeline
 
   @typedoc "A pipe which hasn't started running yet"
   @type t :: Source.t | Conduit.t | Sink.t
@@ -123,9 +122,27 @@ defmodule Pipe do
   end
 
   ## Connecting and running pipes (horizontal composition)
+ 
+  @doc """
+  Allow the use of a list for connecting pipes.
   
+  This simply reduces the list using `connect/2`.
+
+  Note that connecting a source to a sink runs a pipe.
+
+  See `connect/2` for more information.
+
+  ## Examples
+
+    iex> Pipe.connect [Pipe.yield(1), Pipe.await]
+    [1]
+  """
+  def connect(pipes) when is_list(pipes), do: Enum.reduce(pipes, &connect(&2, &1))
+
   @doc """
   Connect two pipes.
+
+  Note that this is a function while `connect/1` is a macro.
 
   Connecting a source to a conduit results in a conduit.
   Connecting a conduit to a conduit results in a conduit.
@@ -260,6 +277,11 @@ defmodule Pipe do
     # handle it by considering it to mean return.
     bind(p, &(return(&1)))
   end
+  def bind(nil, f) do
+    # An expression like if ... do ... end should be taken to have an else
+    # clause that returns nil.
+    bind(return(nil), f)
+  end
   def bind(Done[result: r, leftovers: l], f) do
     x = f.(r)
     # It's quite possible, even normal, that we get not a step but a pipe which
@@ -325,24 +347,6 @@ defmodule Pipe do
   """
   defmacro lazy_conduit(opts), do: do_lazy_conduit(opts)
   
-  @doc """
-  Like conduit/1 but connects the source to the generated conduit.
-  
-  Useful in pipelines.
-  """
-  defmacro conduit_c(source, opts) do
-    quote do Pipe.connect(unquote(source), unquote(do_conduit(opts))) end
-  end
-  
-  @doc """
-  Like lazy_conduit/1 but connects the source to the generated conduit.
-  
-  Useful in pipelines.
-  """
-  defmacro lazy_conduit_c(source, opts) do
-    quote do Pipe.connect(unquote(source), unquote(do_lazy_conduit(opts))) end
-  end
-
   defp do_conduit(opts) do
     quote do 
       Conduit[step: Pipe.m(do: unquote(opts[:do]))]
@@ -365,24 +369,6 @@ defmodule Pipe do
   """
   defmacro lazy_sink(opts), do: do_lazy_sink(opts)
   
-  @doc """
-  Like sink/1 but connects the source to the generated conduit.
-  
-  Useful in pipelines.
-  """
-  defmacro sink_c(source, opts) do
-    quote do Pipe.connect(unquote(source), unquote(do_sink(opts))) end
-  end
-  
-  @doc """
-  Like lazy_sink/1 but connects the source to the generated conduit.
-  
-  Useful in pipelines.
-  """
-  defmacro lazy_sink_c(source, opts) do
-    quote do Pipe.connect(unquote(source), unquote(do_lazy_sink(opts))) end
-  end
-
   defp do_sink(opts) do
     quote do 
       Sink[step: Pipe.m(do: unquote(opts[:do]))]
@@ -404,12 +390,9 @@ defmodule Pipe do
   return an empty list.
   """
   @spec await() :: Sink.t
-  @spec await(sourceish) :: Sink.t
-  def await(source // nil) do
-    connect(source,
-      Sink[step: NeedInput[on_value: &Done[result: [&1]],
-                           on_done: fn _ -> Done[result: []] end]]
-    )
+  def await() do
+    Sink[step: NeedInput[on_value: &Done[result: [&1]],
+                         on_done: fn _ -> Done[result: []] end]]
   end
 
   @doc """
@@ -419,12 +402,9 @@ defmodule Pipe do
   result }` (if the upstream is done).
   """
   @spec await_result() :: Sink.t
-  @spec await_result(sourceish) :: Sink.t
-  def await_result(source // nil) do
-    connect(source,
-      Sink[step: NeedInput[on_value: &Done[result: { :value, &1 }],
-                           on_done:  &Done[result: { :result, &1 }]]]
-    )
+  def await_result() do
+    Sink[step: NeedInput[on_value: &Done[result: { :value, &1 }],
+                         on_done:  &Done[result: { :result, &1 }]]]
   end
 
   @doc """
@@ -479,13 +459,22 @@ defmodule Pipe do
 
   ## Examples
 
-      iex> Pipe.zip_sources(Pipe.yield(1), Pipe.yield(2)) |> Pipe.List.consume
+      iex> Pipe.connect [
+      ...>   Pipe.zip_sources(Pipe.yield(1), Pipe.yield(2)),
+      ...>   Pipe.List.consume
+      ...> ]
       [{1, 2}]
   
-      iex> Pipe.zip_sources(Pipe.done(:a), Pipe.done(:b)) |> Pipe.List.skip_all
+      iex> Pipe.connect [
+      ...>   Pipe.zip_sources(Pipe.done(:a), Pipe.done(:b)),
+      ...>   Pipe.List.skip_all
+      ...> ]
       { :a, :b }
       
-      iex> Pipe.zip_sources(Pipe.done(:a), Pipe.yield(2)) |> Pipe.List.skip_all
+      iex> Pipe.connect [
+      ...>   Pipe.zip_sources(Pipe.done(:a), Pipe.yield(2)),
+      ...>   Pipe.List.skip_all
+      ...> ]
       { :a, :not_done }
   """
   @spec zip_sources(Source.t, Source.t) :: Source.t

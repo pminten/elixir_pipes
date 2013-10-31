@@ -19,8 +19,9 @@ values, sinks consume them and conduits to both. Take for example the following
 pipeline:
 
 ```elixir
+require Pipe, as: P
 alias Pipe.List, as: PL
-PL.source_list([1,2,3]) |> PL.map(&(&1+1)) |> PL.take_while(&(&1<=2))
+P.connect [PL.source_list([1,2,3]), P.map(&(&1+1)), P.take_while(&(&1<=2))]
 # Result: [1, 2]
 ```
 
@@ -37,7 +38,8 @@ Each pipe is an individual value. `PL.source_list([1,2,3])` produces a
 `PL.take_while(&(&1<=2))` produces a `Pipe.Sink`. To run a pipe you have to
 connect all individual bits using the `Pipe.connect/2` function. This function
 connects two pipes to result in a new pipe, or if a source and sink are given
-runs the pipe.
+runs the pipe. For connecting multiple pipes there iss `Pipe.connect/1`, which
+takes a list of pipes.
 
 The above example could have been written as:
     
@@ -60,21 +62,6 @@ sink = PL.take_while(&(&1<=2))
 new_sink = P.connect(conduit, sink)
 result = P.connect(source, new_sink)
 ```
-
-The reason the `PL.source_list([1,2,3]) |> PL.map(&(&1+1)) |>
-PL.take_while(&(&1<=2))` pipeline works is that the `PL.map` function is defined
-like this:
-
-```elixir
-def map(source // nil, f) do
-  P.connect(source, do_map(f))
-end
-```
-
-It simply does the connect for you already. If you don't pass a source (or a
-conduit) nothing happens because `Pipe.connect/2` returns the second argument if
-the first is `nil`. Obviously this is somewhat of a hack but as things are
-right now in Elixir it's a hack that results in somewhat elegantly looking code.
 
 By the way, using `Pipe.connect/2` is sometimes called horizontal composition
 (because of how the code looks when you put it on a single line). There's also
@@ -114,9 +101,11 @@ end
 Here's how it works:
 
 ```elixir
-PL.source_list(["AB;C", "D;E", ";", "F"]),
-|> do_term_by_semi()
-|> PL.consume())
+P.connect [
+  PL.source_list(["AB;C", "D;E", ";", "F"]),
+  do_term_by_semi(),
+  PL.consume()
+]
 =# Result: ["AB", "CD", "E"]
 ```
 
@@ -176,10 +165,6 @@ it. So inside the `[str] ->` another call to `P.conduit` is needed. Because of
 how `return` is transformed (it's imported locally) it is available even outside
 the immediate do-block.
 
-By the way, you sometimes want to use the `connect` hack with do-notation
-without having to go through the trouble of defining a separate function. The
-`conduit_c` and `sink_c` macros let you do this. They take as their first
-argument a source so that they can be used in a pipeline.
 
 ### Strict and lazy pipes
 
@@ -207,10 +192,10 @@ need lazyness strict is the default.
 Every pipe has a result. In do-notation you can get the result of a pipe using
 the `res <- pipe` syntax. When using `connect/2` the result of a completed
 source is passed to the sink and can be obtained using `await_result/1`. For
-example `Pipe.done(4) |> Pipe.await_result()` == `{ :result, 4 }` (whereas
-`Pipe.yield(3) |> Pipe.await_result()` == `{ :value, 3 }`). The `Pipe.done/1`
-function does the same as `return`, except that it returns a pipe, not a step,
-so it can be used with `connect`.
+example `Pipe.connect(Pipe.done(4), Pipe.await_result())` == `{ :result, 4 }`
+(whereas `Pipe.connect(Pipe.yield(3), Pipe.await_result())` == `{ :value, 3 }`).
+The `Pipe.done/1` function does the same as `return`, except that it returns a
+pipe, not a step, so it can be used with `connect/2`.
 
 In general when you write a conduit that doesn't have a return value (when you'd
 just always return nil) it's a good idea to return the upstream return value,
@@ -242,9 +227,7 @@ function returns false or there is no more input. Here's one, wrong, way to
 write it:
 
 ```elixir
-def take_while(source // nil, f) do
-  P.connect(source, do_take_while([], f))
-end
+def take_while(f), do: do_take_while([], f)
 
 defp do_take_while(acc, f) do
   P.sink do
@@ -267,11 +250,7 @@ returns a tuple where the first element is all values that contiguously match
 the function and the second element is all remaining values.
 
 ```elixir
-def cont_consume(source // nil, f) do
-  P.connect(source, do_cont_consume(f))
-end
-
-defp do_cont_consume(f) do
+def cont_consume(f) do
   P.sink do
     a <- take_while(f)
     b <- consume
@@ -280,9 +259,9 @@ defp do_cont_consume(f) do
 end
 ```
 
-When you call it like this: `PL.source_list([1, 2, :a, 3, :b] |>
-cont_consume(&is_integer/1)` the result isn't `{ [1, 2], [:a, 3, :b] }` but `{
-[1, 2], [3, :b] }`. The `:a` is eaten by `take_while`.
+When you call it like this: `P.connect(PL.source_list([1, 2, :a, 3, :b]),
+cont_consume(&is_integer/1))` the result isn't `{ [1, 2], [:a, 3, :b] }` but `{
+    [1, 2], [3, :b] }`. The `:a` is eaten by `take_while`.
 
 To avoid this problem you can use `return_leftovers` to give back unused input
 values. Here's how the real `do_take_while` looks:
@@ -334,8 +313,8 @@ defp do_read64(f) do
 end
 ```
 
-The problem with this is that if you run `read64("/tmp/foo") |>
-Pipe.List.consume()` it opens a file but doesn't close it. Sure, you could
+The problem with this is that if you run `P.connect(read64("/tmp/foo"),
+Pipe.List.consume())` it opens a file but doesn't close it. Sure, you could
 rewrite `read64` to:
     
 ```elixir
@@ -348,10 +327,10 @@ def read64(filename) do
 end
 ```
 
-And that would work for `consume` but it wouldn't work for `read64("/tmp/foo") |>
-Pipe.List.take(0)` because the sink says "I'm done" before the source is done.
-The `IO.close` line is never reached in this case. It also wouldn't work in case
-of an exception somewhere in a sink.
+And that would work for `consume` but it wouldn't work for
+`P.connect(read64("/tmp/foo"), Pipe.List.take(0))` because the sink says "I'm
+done" before the source is done.  The `IO.close` line is never reached in this
+case. It also wouldn't work in case of an exception somewhere in a sink.
 
 There is a better with. Using `Pipe.register_cleanup/1` you can register a
 function that gets called when the pipe has finished running even if there is an
