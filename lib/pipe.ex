@@ -5,7 +5,8 @@ defmodule Pipe do
   See the [README](README.html) for high level documentation.
   """
 
-  require Macro.Monad
+  use Monad
+  use Monad.Pipeline
 
   @typedoc "A pipe which hasn't started running yet"
   @type t :: Source.t | Conduit.t | Sink.t
@@ -301,7 +302,7 @@ defmodule Pipe do
   """
   defmacro source(opts) do
     quote do 
-      Source[step: unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do]))]
+      Source[step: Pipe.m(do: unquote(opts[:do]))]
     end
   end
 
@@ -310,7 +311,7 @@ defmodule Pipe do
   """
   defmacro lazy_source(opts) do
     quote do 
-      Source[step: fn -> unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do])) end]
+      Source[step: fn -> Pipe.m(do: unquote(opts[:do])) end]
     end
   end
   
@@ -344,13 +345,13 @@ defmodule Pipe do
 
   defp do_conduit(opts) do
     quote do 
-      Conduit[step: unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do]))]
+      Conduit[step: Pipe.m(do: unquote(opts[:do]))]
     end
   end
 
   defp do_lazy_conduit(opts) do
     quote do 
-      Conduit[step: fn -> unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do])) end]
+      Conduit[step: fn -> Pipe.m(do: unquote(opts[:do])) end]
     end
   end
   
@@ -384,13 +385,13 @@ defmodule Pipe do
 
   defp do_sink(opts) do
     quote do 
-      Sink[step: unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do]))]
+      Sink[step: Pipe.m(do: unquote(opts[:do]))]
     end
   end
 
   defp do_lazy_sink(opts) do
     quote do 
-      Sink[step: fn -> unquote(Macro.Monad.monad_do_notation(Pipe, opts[:do])) end]
+      Sink[step: fn -> Pipe.m(do: unquote(opts[:do])) end]
     end
   end
 
